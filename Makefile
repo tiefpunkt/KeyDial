@@ -1,81 +1,164 @@
-OBJ = main.o rotary_encoder.o
+# Name: Makefile
+# Project: hid-mouse example
+# Author: Christian Starkjohann
+# Creation Date: 2008-04-07
+# Tabsize: 4
+# Copyright: (c) 2008 by OBJECTIVE DEVELOPMENT Software GmbH
+# License: GNU GPL v2 (see License.txt), GNU GPL v3 or proprietary (CommercialLicense.txt)
+# This Revision: $Id: Makefile 692 2008-11-07 15:07:40Z cs $
 
-# Default values
-OUT           ?= image
-MCU_TARGET    ?= atmega32
-MCU_CC        ?= avr-gcc
-MCU_AS	      ?= avr-as
-OPTIMIZE      ?= -Os
-WARNINGS      ?= -Wall -Winline
-DEFS          ?= -DF_CPU=16000000
-CFLAGS        += -mmcu=$(MCU_TARGET) $(OPTIMIZE) $(WARNINGS) $(DEFS) -I.
-ASFLAGS	      += -mmcu=avr5
-LDFLAGS        = -Wl,-Map,$(OUT).map -L/usr/lib64/binutils/avr/2.18/
+DEVICE  = atmega32
+F_CPU   = 16000000	# in Hz
+FUSE_L  = # see below for fuse values for particular devices
+FUSE_H  = 
+AVRDUDE = avrdude -c usbasp -p $(DEVICE) # edit this line for your programmer
 
-# External Tools
-OBJCOPY       ?= avr-objcopy
-OBJDUMP       ?= avr-objdump
-FLASHCMD      ?= avrdude -c usbasp -p $(MCU_TARGET) -U flash:w:image.hex -U eeprom:w:$(OUT)_eeprom.hex
-ERASECMD      ?= avrdude -c usbasp -p $(MCU_TARGET) -e
+CFLAGS  = -Iusbdrv -I. -DDEBUG_LEVEL=2
+OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o rotary_encoder.o main.o
 
-#############################################################################
-# Rules
-all: $(OUT).elf lst text eeprom
+COMPILE = avr-gcc -Wall -Os -DF_CPU=$(F_CPU) $(CFLAGS) -mmcu=$(DEVICE)
 
+##############################################################################
+# Fuse values for particular devices
+##############################################################################
+# If your device is not listed here, go to
+# http://palmavr.sourceforge.net/cgi-bin/fc.cgi
+# and choose options for external crystal clock and no clock divider
+#
+################################## ATMega8 ##################################
+# ATMega8 FUSE_L (Fuse low byte):
+# 0x9f = 1 0 0 1   1 1 1 1
+#        ^ ^ \ /   \--+--/
+#        | |  |       +------- CKSEL 3..0 (external >8M crystal)
+#        | |  +--------------- SUT 1..0 (crystal osc, BOD enabled)
+#        | +------------------ BODEN (BrownOut Detector enabled)
+#        +-------------------- BODLEVEL (2.7V)
+# ATMega8 FUSE_H (Fuse high byte):
+# 0xc9 = 1 1 0 0   1 0 0 1 <-- BOOTRST (boot reset vector at 0x0000)
+#        ^ ^ ^ ^   ^ ^ ^------ BOOTSZ0
+#        | | | |   | +-------- BOOTSZ1
+#        | | | |   + --------- EESAVE (don't preserve EEPROM over chip erase)
+#        | | | +-------------- CKOPT (full output swing)
+#        | | +---------------- SPIEN (allow serial programming)
+#        | +------------------ WDTON (WDT not always on)
+#        +-------------------- RSTDISBL (reset pin is enabled)
+#
+############################## ATMega48/88/168 ##############################
+# ATMega*8 FUSE_L (Fuse low byte):
+# 0xdf = 1 1 0 1   1 1 1 1
+#        ^ ^ \ /   \--+--/
+#        | |  |       +------- CKSEL 3..0 (external >8M crystal)
+#        | |  +--------------- SUT 1..0 (crystal osc, BOD enabled)
+#        | +------------------ CKOUT (if 0: Clock output enabled)
+#        +-------------------- CKDIV8 (if 0: divide by 8)
+# ATMega*8 FUSE_H (Fuse high byte):
+# 0xde = 1 1 0 1   1 1 1 0
+#        ^ ^ ^ ^   ^ \-+-/
+#        | | | |   |   +------ BODLEVEL 0..2 (110 = 1.8 V)
+#        | | | |   + --------- EESAVE (preserve EEPROM over chip erase)
+#        | | | +-------------- WDTON (if 0: watchdog always on)
+#        | | +---------------- SPIEN (allow serial programming)
+#        | +------------------ DWEN (debug wire enable)
+#        +-------------------- RSTDISBL (reset pin is enabled)
+#
+############################## ATTiny25/45/85 ###############################
+# ATMega*5 FUSE_L (Fuse low byte):
+# 0xef = 1 1 1 0   1 1 1 1
+#        ^ ^ \+/   \--+--/
+#        | |  |       +------- CKSEL 3..0 (clock selection -> crystal @ 12 MHz)
+#        | |  +--------------- SUT 1..0 (BOD enabled, fast rising power)
+#        | +------------------ CKOUT (clock output on CKOUT pin -> disabled)
+#        +-------------------- CKDIV8 (divide clock by 8 -> don't divide)
+# ATMega*5 FUSE_H (Fuse high byte):
+# 0xdd = 1 1 0 1   1 1 0 1
+#        ^ ^ ^ ^   ^ \-+-/ 
+#        | | | |   |   +------ BODLEVEL 2..0 (brownout trigger level -> 2.7V)
+#        | | | |   +---------- EESAVE (preserve EEPROM on Chip Erase -> not preserved)
+#        | | | +-------------- WDTON (watchdog timer always on -> disable)
+#        | | +---------------- SPIEN (enable serial programming -> enabled)
+#        | +------------------ DWEN (debug wire enable)
+#        +-------------------- RSTDISBL (disable external reset -> enabled)
+#
+################################ ATTiny2313 #################################
+# ATTiny2313 FUSE_L (Fuse low byte):
+# 0xef = 1 1 1 0   1 1 1 1
+#        ^ ^ \+/   \--+--/
+#        | |  |       +------- CKSEL 3..0 (clock selection -> crystal @ 12 MHz)
+#        | |  +--------------- SUT 1..0 (BOD enabled, fast rising power)
+#        | +------------------ CKOUT (clock output on CKOUT pin -> disabled)
+#        +-------------------- CKDIV8 (divide clock by 8 -> don't divide)
+# ATTiny2313 FUSE_H (Fuse high byte):
+# 0xdb = 1 1 0 1   1 0 1 1
+#        ^ ^ ^ ^   \-+-/ ^
+#        | | | |     |   +---- RSTDISBL (disable external reset -> enabled)
+#        | | | |     +-------- BODLEVEL 2..0 (brownout trigger level -> 2.7V)
+#        | | | +-------------- WDTON (watchdog timer always on -> disable)
+#        | | +---------------- SPIEN (enable serial programming -> enabled)
+#        | +------------------ EESAVE (preserve EEPROM on Chip Erase -> not preserved)
+#        +-------------------- DWEN (debug wire enable)
+
+
+# symbolic targets:
+help:
+	@echo "This Makefile has no default rule. Use one of the following:"
+	@echo "make hex ....... to build main.hex"
+	@echo "make program ... to flash fuses and firmware"
+	@echo "make fuse ...... to flash the fuses"
+	@echo "make flash ..... to flash the firmware (use this on metaboard)"
+	@echo "make clean ..... to delete objects and hex file"
+
+hex: main.hex
+
+program: flash fuse
+
+# rule for programming fuse bits:
+fuse:
+	@[ "$(FUSE_H)" != "" -a "$(FUSE_L)" != "" ] || \
+		{ echo "*** Edit Makefile and choose values for FUSE_L and FUSE_H!"; exit 1; }
+	$(AVRDUDE) -U hfuse:w:$(FUSE_H):m -U lfuse:w:$(FUSE_L):m
+
+# rule for uploading firmware:
+flash: main.hex
+	$(AVRDUDE) -U flash:w:main.hex:i
+
+# rule for deleting dependent files (those which can be built by Make):
 clean:
-	rm -rf $(OUT) *.o *.lst *.map *.hex *.bin *.srec can/*.o
-	rm -rf *.srec $(OUT).elf
+	rm -f main.hex main.lst main.obj main.cof main.list main.map main.eep.hex main.elf *.o usbdrv/*.o main.s usbdrv/oddebug.s usbdrv/usbdrv.s
 
-flash: $(OUT).hex
-	$(ERASECMD)
-	$(FLASHCMD)
+# Generic rule for compiling C files:
+.c.o:
+	$(COMPILE) -c $< -o $@
 
-#############################################################################
-# Building Rules 
-$(OUT).elf: $(OBJ)
-	$(MCU_CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
+# Generic rule for assembling Assembler source files:
+.S.o:
+	$(COMPILE) -x assembler-with-cpp -c $< -o $@
+# "-x assembler-with-cpp" should not be necessary since this is the default
+# file type for the .S (with capital S) extension. However, upper case
+# characters are not always preserved on Windows. To ensure WinAVR
+# compatibility define the file type manually.
 
-%.o: %.c
-	$(MCU_CC) $(CFLAGS) -c $< -o $@ 
+# Generic rule for compiling C to assembler, used for debugging only.
+.c.s:
+	$(COMPILE) -S $< -o $@
 
-%.o: %.S
-	$(MCU_AS) $(ASFLAGS) -o $@ $<
+# file targets:
 
-lst: $(OUT).lst
+# Since we don't want to ship the driver multipe times, we copy it into this project:
+usbdrv:
+	cp -r ../../../usbdrv .
 
-%.lst: %.elf
-	$(OBJDUMP) -h -S $< > $@
+main.elf: usbdrv $(OBJECTS)	# usbdrv dependency only needed because we copy it
+	$(COMPILE) -o main.elf $(OBJECTS)
 
-# Rules for building the .text rom images
-text: hex bin srec
+main.hex: main.elf
+	rm -f main.hex main.eep.hex
+	avr-objcopy -j .text -j .data -O ihex main.elf main.hex
+	avr-size main.hex
 
-hex:  $(OUT).hex
-bin:  $(OUT).bin
-srec: $(OUT).srec
+# debugging targets:
 
-%.hex: %.elf
-	$(OBJCOPY) -j .text -j .data -O ihex $< $@
+disasm:	main.elf
+	avr-objdump -d main.elf
 
-%.srec: %.elf
-	$(OBJCOPY) -j .text -j .data -O srec $< $@
-
-%.bin: %.elf
-	$(OBJCOPY) -j .text -j .data -O binary $< $@
-
-# Rules for building the .eeprom rom images
-
-eeprom: ehex ebin esrec
-
-ehex:  $(OUT)_eeprom.hex
-ebin:  $(OUT)_eeprom.bin
-esrec: $(OUT)_eeprom.srec
-
-%_eeprom.hex: %.elf
-	$(OBJCOPY) -j .eeprom --change-section-lma .eeprom=0 -O ihex $< $@
-
-%_eeprom.srec: %.elf
-	$(OBJCOPY) -j .eeprom --change-section-lma .eeprom=0 -O srec $< $@
-
-%_eeprom.bin: %.elf
-	$(OBJCOPY) -j .eeprom --change-section-lma .eeprom=0 -O binary $< $@
-
+cpp:
+	$(COMPILE) -E main.c

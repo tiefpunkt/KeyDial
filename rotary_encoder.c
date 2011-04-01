@@ -1,4 +1,4 @@
-#include "rotary_encoder.h";
+#include "rotary_encoder.h"
 #include <avr/interrupt.h>
 #include <avr/io.h>
 
@@ -8,7 +8,7 @@
 volatile int8_t current_phase = 0;
 
 ISR(TIMER0_COMP_vect) {
-	enc_value += enc_read();
+	enc_value = enc_read();
 }
 
 void enc_init() {
